@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verificación responsive de DOCUX</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #eef3f9;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+
+      #status {
+        position: fixed;
+        top: 8px;
+        right: 8px;
+        z-index: 10;
+        max-width: 320px;
+        margin: 0;
+        padding: 6px 10px;
+        border: 1px solid #b9c9dc;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #10243f;
+        font-size: 11px;
+        line-height: 1.35;
+        box-shadow: 0 2px 8px rgb(16 36 63 / 10%);
+      }
+
+      #viewport {
+        display: inline-block;
+        overflow: hidden;
+        background: #ffffff;
+        transform-origin: top left;
+      }
+
+      iframe {
+        display: block;
+        border: 0;
+        background: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <p id="status" role="status">Cargando…</p>
+    <div id="viewport" role="img" aria-label="Captura de la interfaz DOCUX" tabindex="0">
+      <iframe id="frame" title="DOCUX"></iframe>
+    </div>
+    <script>
+      (() => {
+        const params = new URLSearchParams(window.location.search);
+        const width = Number(params.get("w") ?? 375);
+        const height = Number(params.get("h") ?? 900);
+        const scale = Number(params.get("s") ?? 1);
+        const page = params.get("page") ?? "panel";
+        const preview = page !== "access";
+
+        const status = document.getElementById("status");
+        const viewport = document.getElementById("viewport");
+        const frame = document.getElementById("frame");
+
+        if (params.get("chrome") === "0") {
+          status.hidden = true;
+        }
+
+        const headings = {
+          panel: "Tu espacio de digitalización",
+          escanear: "Escanear documento",
+          documentos: "Tus documentos",
+          respaldos: "Protege tus datos locales",
+          configuracion: "Configuración de DOCUX",
+        };
+
+        frame.style.width = `${width}px`;
+        frame.style.height = `${height}px`;
+        frame.width = String(width);
+        frame.height = String(height);
+        viewport.style.transform = scale === 1 ? "" : `scale(${scale})`;
+
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        async function waitFor(check, label, timeoutMs = 20000) {
+          const startedAt = Date.now();
+
+          while (Date.now() - startedAt < timeoutMs) {
+            try {
+              if (check()) {
+                return;
+              }
+            } catch {
+              // El documento del iframe puede estar navegando.
+            }
+
+            await sleep(50);
+          }
+
+          throw new Error(`Tiempo de espera agotado: ${label}`);
+        }
+
+        async function run() {
+          let loaded = false;
+          frame.addEventListener("load", () => {
+            loaded = true;
+          });
+          frame.src = `/#/${preview ? "panel" : "acceso"}`;
+
+          await waitFor(() => loaded, "carga inicial del iframe");
+
+          const doc = () => frame.contentDocument;
+
+          if (preview) {
+            await waitFor(() => {
+              const button = doc()?.querySelector(".access-card button");
+              return button?.textContent?.includes("Explorar");
+            }, "botón de vista previa");
+
+            doc().querySelector(".access-card button").click();
+
+            await waitFor(
+              () =>
+                doc()
+                  ?.querySelector("h1")
+                  ?.textContent?.includes(headings.panel),
+              "panel",
+            );
+
+            if (page !== "panel") {
+              frame.contentWindow.location.hash = `#/${page}`;
+              await waitFor(
+                () =>
+                  doc()
+                    ?.querySelector("h1")
+                    ?.textContent?.includes(headings[page]),
+                `página ${page}`,
+              );
+            }
+          } else {
+            await waitFor(
+              () =>
+                doc()
+                  ?.querySelector("h1")
+                  ?.textContent?.includes("Acceso local"),
+              "acceso",
+            );
+          }
+
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          );
+
+          document.title = `READY ${width}x${height} ${page}`;
+          status.dataset.ready = "true";
+          status.textContent = `READY ${width}×${height} · ${page}`;
+        }
+
+        run().catch((error) => {
+          document.title = "ERROR";
+          status.dataset.ready = "error";
+          status.textContent = `ERROR: ${error.message}`;
+        });
+      })();
+    </script>
+  </body>
+</html>

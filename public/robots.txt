@@ -1,0 +1,4 @@
+# DOCUX 1A es una vista previa de interfaz.
+# No debe indexarse en buscadores mientras no exista autenticación real.
+User-agent: *
+Disallow: /

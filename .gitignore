@@ -1,0 +1,63 @@
+# Dependencias y artefactos de compilación
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Pruebas y herramientas
+playwright-report/
+test-results/
+blob-report/
+
+# Variables y secretos locales
+.env
+.env.*
+!.env.example
+*.local
+
+# Registros
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Archivos temporales de OneDrive/Office
+~$*
+.~*
+
+# Despliegue y CLI de hosting
+.wrangler/
+.netlify/
+.vercel/
+
+# Paquetes de despliegue
+*.zip
+
+# Secretos y certificados (defensivo; hoy no existe ninguno)
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.crt
+.ssh/
+id_rsa*
+.npmrc.local
+
+# Cachés y temporales adicionales
+.eslintcache
+.cache/
+*.tmp
+*.bak
+*.orig
+*.rej
+.history/
