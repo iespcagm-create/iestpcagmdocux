@@ -52,6 +52,17 @@ function useObjectUrl(blob: Blob): string {
   return url;
 }
 
+function isCameraBlockedByPolicy(): boolean {
+  const policyDocument = document as Document & {
+    featurePolicy?: { allowsFeature(feature: string): boolean };
+    permissionsPolicy?: { allowsFeature(feature: string): boolean };
+  };
+  const policy =
+    policyDocument.permissionsPolicy ?? policyDocument.featurePolicy;
+
+  return policy?.allowsFeature('camera') === false;
+}
+
 function cameraErrorMessage(error: unknown): string {  const name =
     error instanceof DOMException
       ? error.name
@@ -319,6 +330,14 @@ export function ScannerPage() {
       setCameraState('error');
       setCameraError(
         'Navegador incompatible o contexto no seguro. Abra DOCUX con HTTPS o desde localhost para usar la cámara.',
+      );
+      return;
+    }
+
+    if (isCameraBlockedByPolicy()) {
+      setCameraState('error');
+      setCameraError(
+        'La política de seguridad del sitio está bloqueando la cámara. El administrador debe permitir camera=(self) en la cabecera Permissions-Policy.',
       );
       return;
     }
