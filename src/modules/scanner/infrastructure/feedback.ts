@@ -1,6 +1,21 @@
 let audioContext: AudioContext | null = null;
 
-export function speakText(text: string, enabled: boolean): void {
+export const WELCOME_MESSAGE =
+  'Bienvenido a DOCUX, aplicativo creado por Asistencia Administrativa, periodo dos.';
+export const LOGOUT_MESSAGE = 'Gracias por usar DOCUX.';
+
+export interface SpeechOptions {
+  lang?: string;
+  rate?: number;
+  volume?: number;
+  pitch?: number;
+}
+
+export function speakText(
+  text: string,
+  enabled: boolean,
+  options: SpeechOptions = {},
+): void {
   if (!enabled || typeof window === 'undefined') {
     return;
   }
@@ -15,9 +30,10 @@ export function speakText(text: string, enabled: boolean): void {
   try {
     window.speechSynthesis.cancel();
     const utterance = new window.SpeechSynthesisUtterance(text);
-    utterance.lang = 'es-PE';
-    utterance.rate = 0.98;
-    utterance.pitch = 1;
+    utterance.lang = options.lang ?? 'es-PE';
+    utterance.rate = options.rate ?? 0.98;
+    utterance.volume = options.volume ?? 1;
+    utterance.pitch = options.pitch ?? 1;
     window.speechSynthesis.speak(utterance);
   } catch {
     // La voz es opcional; el escaneo continúa si falla.

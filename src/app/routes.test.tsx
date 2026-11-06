@@ -83,7 +83,7 @@ describe('navegación y rutas protegidas de la Fase 1', () => {
     await user.click(logout);
 
     expect(
-      await screen.findByRole('heading', { name: 'Acceso local' }),
+      await screen.findByRole('heading', { name: 'Acceso local' }, { timeout: 3000 }),
     ).toBeInTheDocument();
     expect(store.getSnapshot()).toBeNull();
     expect(router.state.location.pathname).toBe('/acceso');

@@ -1,8 +1,5 @@
 import { PDFDocument } from 'pdf-lib';
-
-const A4_WIDTH = 595.28;
-const A4_HEIGHT = 841.89;
-const MARGIN = 24;
+import { fitImageToA4 } from '../domain/documentGeometry';
 
 function pad(value: number): string {
   return String(value).padStart(2, '0');
@@ -51,21 +48,14 @@ export async function generatePdf(
     const image = blob.type.includes('png')
       ? await pdf.embedPng(bytes)
       : await pdf.embedJpg(bytes);
-    const page = pdf.addPage([A4_WIDTH, A4_HEIGHT]);
-    const availableWidth = A4_WIDTH - MARGIN * 2;
-    const availableHeight = A4_HEIGHT - MARGIN * 2;
-    const scale = Math.min(
-      availableWidth / image.width,
-      availableHeight / image.height,
-    );
-    const width = image.width * scale;
-    const height = image.height * scale;
+    const layout = fitImageToA4(image.width, image.height);
+    const page = pdf.addPage([layout.pageWidth, layout.pageHeight]);
 
     page.drawImage(image, {
-      x: (A4_WIDTH - width) / 2,
-      y: (A4_HEIGHT - height) / 2,
-      width,
-      height,
+      x: layout.x,
+      y: layout.y,
+      width: layout.width,
+      height: layout.height,
     });
 
     onProgress?.(
@@ -81,7 +71,7 @@ export async function generatePdf(
     });
   }
 
-  pdf.setProducer('DOCUX Fase 1');
+  pdf.setProducer('DOCUX');
   pdf.setCreator('DOCUX');
   const bytes = await pdf.save();
   const copy = new Uint8Array(bytes.byteLength);

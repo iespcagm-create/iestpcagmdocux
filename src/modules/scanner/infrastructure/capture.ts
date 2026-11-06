@@ -63,6 +63,7 @@ function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Blob> {
 export async function captureVideoFrame(
   video: HTMLVideoElement,
   guide: HTMLElement | null,
+  maxSide = 2400,
 ): Promise<Blob> {
   const source = getSourceRect(video, guide);
 
@@ -70,7 +71,6 @@ export async function captureVideoFrame(
     throw new Error('La cámara todavía no tiene imagen.');
   }
 
-  const maxSide = 1800;
   const reduction = Math.min(1, maxSide / Math.max(source.width, source.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(source.width * reduction));

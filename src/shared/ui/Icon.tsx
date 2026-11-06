@@ -8,6 +8,7 @@ export type IconName =
   | 'settings'
   | 'camera'
   | 'folder'
+  | 'flash'
   | 'shield'
   | 'arrow-right'
   | 'file'
@@ -66,6 +67,11 @@ const paths: Record<IconName, ReactNode> = {
     <>
       <path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1l1.2-2h6.6l1.2 2h1A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z" />
       <circle cx="12" cy="12.5" r="3.5" />
+    </>
+  ),
+  flash: (
+    <>
+      <path d="M13 2 6 14h6l-1 8 7-12h-6l1-8z" />
     </>
   ),
   folder: (

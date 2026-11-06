@@ -1,20 +1,60 @@
-import { useEffect, useRef } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../../modules/auth/ui/sessionContext';
+import { useScanSession } from '../../modules/scanner/ui/scanSessionContext';
+import {
+  LOGOUT_MESSAGE,
+  speakText,
+} from '../../modules/scanner/infrastructure/feedback';
 import { Brand } from '../../shared/ui/Brand';
 import { Icon } from '../../shared/ui/Icon';
 import { getPageLabel, navigationItems } from '../navigation';
 
+const LOGOUT_DELAY_MS = 1400;
+
 export function AppLayout() {
   const { endSession } = useSession();
+  const { voiceEnabled } = useScanSession();
   const location = useLocation();
+  const navigate = useNavigate();
   const mainRef = useRef<HTMLElement>(null);
+  const timerRef = useRef<number | null>(null);
+  const loggingOutRef = useRef(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const pageLabel = getPageLabel(location.pathname);
 
   useEffect(() => {
     document.title = `${pageLabel} · DOCUX`;
     mainRef.current?.focus({ preventScroll: true });
   }, [pageLabel]);
+
+  const handleLogout = useCallback(() => {
+    if (loggingOutRef.current) {
+      return;
+    }
+
+    loggingOutRef.current = true;
+    setLoggingOut(true);
+    window.dispatchEvent(new Event('docux:logout'));
+    speakText(LOGOUT_MESSAGE, voiceEnabled, {
+      lang: 'es-PE',
+      rate: 0.95,
+      volume: 1,
+    });
+
+    timerRef.current = window.setTimeout(() => {
+      endSession();
+      navigate('/acceso', { replace: true });
+    }, LOGOUT_DELAY_MS);
+  }, [endSession, navigate, voiceEnabled]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="app-shell">
@@ -58,7 +98,7 @@ export function AppLayout() {
           <p>Los documentos permanecen en este dispositivo.</p>
           <button
             className="button button--sidebar"
-            onClick={endSession}
+            onClick={handleLogout}
             type="button"
           >
             <Icon name="logout" size={18} />
@@ -80,7 +120,7 @@ export function AppLayout() {
             <button
               aria-label="Cerrar sesión"
               className="mobile-logout"
-              onClick={endSession}
+              onClick={handleLogout}
               title="Cerrar sesión"
               type="button"
             >
@@ -108,6 +148,18 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {loggingOut ? (
+        <div
+          aria-live="assertive"
+          className="logout-screen"
+          role="dialog"
+          aria-modal="true"
+        >
+          <Brand variant="hero" />
+          <p>Gracias por usar DOCUX.</p>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   sharePdf,
   formatBytes,
 } from '../../../shared/utils/files';
+import { useObjectUrl } from '../../../shared/utils/useObjectUrl';
 import { saveDocument } from '../../documents/infrastructure/indexedDb';
 import {
   captureVideoFrame,
@@ -19,20 +20,63 @@ import {
   meanAbsoluteDifference,
   rotateImageBlob,
 } from '../infrastructure/capture';
+import {
+  createVideoAnalysisCanvas,
+  detectQuadInCanvas,
+} from '../infrastructure/documentDetection';
 import { speakText, playCaptureSound } from '../infrastructure/feedback';
+import {
+  getImageDimensions,
+  yieldToBrowser,
+} from '../infrastructure/image';
+import {
+  getLoadedOpenCv,
+  loadOpenCv,
+} from '../infrastructure/opencv';
 import {
   defaultPdfName,
   generatePdf,
   sanitizePdfName,
 } from '../infrastructure/pdf';
+import {
+  setTorchEnabled,
+  supportsTorch,
+} from '../infrastructure/torch';
+import {
+  maxCornerDistance,
+  quadAreaRatio,
+  scaleQuad,
+  type Quad,
+} from '../domain/documentGeometry';
+import { DocumentEditor, type PendingCapture } from './DocumentEditor';
 import { useScanSession, type ScanPage } from './scanSessionContext';
 
 type CaptureMode = 'manual' | 'auto';
 type CameraState = 'starting' | 'ready' | 'error';
+type CvState = 'idle' | 'loading' | 'ready' | 'error';
+type DetectionStatus = 'none' | 'unstable' | 'stable';
+
+interface LiveDetection {
+  corners: Quad | null;
+  status: DetectionStatus;
+  areaRatio: number;
+  updatedAt: number;
+}
+
+const EMPTY_DETECTION: LiveDetection = {
+  corners: null,
+  status: 'none',
+  areaRatio: 0,
+  updatedAt: 0,
+};
 
 const STABLE_THRESHOLD = 5.5;
 const MOTION_THRESHOLD = 12;
 const AUTO_COOLDOWN_MS = 2300;
+const AUTO_STABILITY_MS = 1500;
+const LIVE_STABILITY_MOVEMENT = 0.018;
+const LIVE_MIN_AREA_RATIO = 0.2;
+const MAX_CAPTURE_SIDE = 2400;
 
 function createDocumentId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -40,16 +84,6 @@ function createDocumentId(): string {
   }
 
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function useObjectUrl(blob: Blob): string {
-  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
-
-  useEffect(() => {
-    return () => URL.revokeObjectURL(url);
-  }, [url]);
-
-  return url;
 }
 
 function isCameraBlockedByPolicy(): boolean {
@@ -63,7 +97,8 @@ function isCameraBlockedByPolicy(): boolean {
   return policy?.allowsFeature('camera') === false;
 }
 
-function cameraErrorMessage(error: unknown): string {  const name =
+function cameraErrorMessage(error: unknown): string {
+  const name =
     error instanceof DOMException
       ? error.name
       : error instanceof Error
@@ -286,6 +321,14 @@ export function ScannerPage() {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfMessage, setPdfMessage] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [pendingCapture, setPendingCapture] = useState<PendingCapture | null>(null);
+  const [cvState, setCvState] = useState<CvState>('idle');
+  const [cvProgress, setCvProgress] = useState(0);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchBusy, setTorchBusy] = useState(false);
+  const [liveDetection, setLiveDetection] = useState<LiveDetection>(EMPTY_DETECTION);
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -297,6 +340,33 @@ export function ScannerPage() {
   const autoCooldownUntilRef = useRef(0);
   const autoNeedsMovementRef = useRef(false);
   const savedDocumentIdRef = useRef<string | null>(null);
+  const pendingCaptureRef = useRef<PendingCapture | null>(null);
+  const cvStateRef = useRef<CvState>('idle');
+  const torchOnRef = useRef(false);
+  const liveDetectionRef = useRef<LiveDetection>(EMPTY_DETECTION);
+
+  useEffect(() => {
+    voiceRef.current = voiceEnabled;
+    if (!voiceEnabled && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    cvStateRef.current = cvState;
+  }, [cvState]);
+
+  useEffect(() => {
+    torchOnRef.current = torchOn;
+  }, [torchOn]);
+
+  useEffect(() => {
+    pendingCaptureRef.current = pendingCapture;
+  }, [pendingCapture]);
+
+  useEffect(() => {
+    liveDetectionRef.current = liveDetection;
+  }, [liveDetection]);
 
   const resetPdfOutput = useCallback(() => {
     setPdfResult(null);
@@ -306,16 +376,20 @@ export function ScannerPage() {
     savedDocumentIdRef.current = null;
   }, []);
 
-  useEffect(() => {
-    voiceRef.current = voiceEnabled;
-    if (!voiceEnabled && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-  }, [voiceEnabled]);
-
   const stopCamera = useCallback(() => {
-    streamRef.current?.getTracks().forEach((track) => track.stop());
+    const stream = streamRef.current;
+    const track = stream?.getVideoTracks()[0];
+
+    if (track) {
+      void setTorchEnabled(track, false);
+    }
+
+    stream?.getTracks().forEach((cameraTrack) => cameraTrack.stop());
     streamRef.current = null;
+    torchOnRef.current = false;
+    setTorchOn(false);
+    setTorchSupported(false);
+
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
@@ -387,6 +461,12 @@ export function ScannerPage() {
 
       video.srcObject = stream;
       await video.play().catch(() => undefined);
+      setVideoSize({
+        width: video.videoWidth || 0,
+        height: video.videoHeight || 0,
+      });
+      setTorchSupported(supportsTorch(stream.getVideoTracks()[0] ?? null));
+      setTorchOn(false);
       setCameraState('ready');
     } catch (error) {
       setCameraState('error');
@@ -399,20 +479,173 @@ export function ScannerPage() {
       void startCamera();
     }, 0);
 
-    if (!('speechSynthesis' in window)) {
-      // La voz es opcional; el escaneo continúa sin ella.
-    } else if (voiceRef.current) {
+    if ('speechSynthesis' in window && voiceRef.current) {
       speakText('Iniciando escaneo', true);
     }
 
     return () => {
       window.clearTimeout(timer);
       stopCamera();
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
     };
   }, [startCamera, stopCamera]);
+
+  useEffect(() => {
+    if (
+      cameraState !== 'ready' ||
+      cvState === 'ready' ||
+      cvState === 'loading'
+    ) {
+      return;
+    }
+
+    if (cvState === 'error') {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+
+      setCvState('loading');
+      setCvProgress(0);
+
+      void loadOpenCv((progress) => {
+        if (!cancelled) {
+          setCvProgress(progress);
+        }
+      })
+        .then(() => {
+          if (!cancelled) {
+            setCvState('ready');
+            setCvProgress(100);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCvState('error');
+            setMode('manual');
+            setAutoHint(
+              'La detección automática no está disponible. Use el ajuste manual.',
+            );
+          }
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [cameraState, cvState]);
+
+  useEffect(() => {
+    if (
+      cameraState !== 'ready' ||
+      cvState !== 'ready' ||
+      pendingCapture !== null
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let busy = false;
+    let previousCorners: Quad | null = null;
+    let stableFrames = 0;
+
+    const detect = async () => {
+      if (busy || cancelled || capturingRef.current) {
+        return;
+      }
+
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) {
+        return;
+      }
+
+      busy = true;
+
+      try {
+        await yieldToBrowser();
+        const frame = createVideoAnalysisCanvas(video, 960);
+        const cv = getLoadedOpenCv();
+
+        if (!frame || !cv || cancelled) {
+          return;
+        }
+
+        const detected = detectQuadInCanvas(frame, cv);
+
+        if (!detected) {
+          previousCorners = null;
+          stableFrames = 0;
+          const next: LiveDetection = {
+            corners: null,
+            status: 'none',
+            areaRatio: 0,
+            updatedAt: performance.now(),
+          };
+          liveDetectionRef.current = next;
+          setLiveDetection(next);
+          return;
+        }
+
+        const scaled = scaleQuad(
+          detected.corners,
+          video.videoWidth / frame.width,
+          video.videoHeight / frame.height,
+        );
+        const movement =
+          previousCorners === null
+            ? Infinity
+            : maxCornerDistance(scaled, previousCorners) /
+              Math.max(1, Math.hypot(video.videoWidth, video.videoHeight));
+        stableFrames =
+          movement <= LIVE_STABILITY_MOVEMENT ? stableFrames + 1 : 0;
+        previousCorners = scaled;
+        const areaRatio = quadAreaRatio(
+          scaled,
+          video.videoWidth,
+          video.videoHeight,
+        );
+        const status: DetectionStatus =
+          stableFrames >= 2 &&
+          areaRatio >= LIVE_MIN_AREA_RATIO
+            ? 'stable'
+            : 'unstable';
+        const next: LiveDetection = {
+          corners: scaled,
+          status,
+          areaRatio,
+          updatedAt: performance.now(),
+        };
+
+        liveDetectionRef.current = next;
+        setLiveDetection(next);
+      } catch {
+        const next: LiveDetection = {
+          corners: null,
+          status: 'none',
+          areaRatio: 0,
+          updatedAt: performance.now(),
+        };
+        liveDetectionRef.current = next;
+        setLiveDetection(next);
+      } finally {
+        busy = false;
+      }
+    };
+
+    void detect();
+    const interval = window.setInterval(() => {
+      void detect();
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [cameraState, cvState, pendingCapture]);
 
   const capturePage = useCallback(async () => {
     if (capturingRef.current || cameraState !== 'ready') {
@@ -427,24 +660,26 @@ export function ScannerPage() {
     capturingRef.current = true;
     setCapturing(true);
     setCaptureMessage('');
+    countdownRef.current = null;
+    setCountdown(null);
 
     try {
-      const blob = await captureVideoFrame(video, guideRef.current);
+      const blob = await captureVideoFrame(video, null, MAX_CAPTURE_SIDE);
+      const size = await getImageDimensions(blob);
+      const capture: PendingCapture = {
+        blob,
+        width: size.width,
+        height: size.height,
+        targetIndex: replaceIndex,
+      };
 
-      if (replaceIndex !== null) {
-        replacePage(replaceIndex, blob);
-        setReplaceIndex(null);
-      } else {
-        addPage(blob);
-      }
-
+      pendingCaptureRef.current = capture;
+      setPendingCapture(capture);
       autoCooldownUntilRef.current = performance.now() + AUTO_COOLDOWN_MS;
       autoNeedsMovementRef.current = true;
-      resetPdfOutput();
       setFlashing(true);
       window.setTimeout(() => setFlashing(false), 220);
       playCaptureSound();
-      speakText('Escaneo terminado', voiceRef.current);
     } catch {
       setCaptureMessage(
         'No se pudo capturar la página. Mantenga la cámara activa y vuelva a intentarlo.',
@@ -453,10 +688,45 @@ export function ScannerPage() {
       capturingRef.current = false;
       setCapturing(false);
     }
-  }, [addPage, cameraState, replaceIndex, replacePage, resetPdfOutput]);
+  }, [cameraState, replaceIndex]);
+
+  const handleEditorConfirm = useCallback(
+    (blob: Blob) => {
+      const capture = pendingCaptureRef.current;
+
+      if (
+        capture?.targetIndex !== null &&
+        capture?.targetIndex !== undefined
+      ) {
+        replacePage(capture.targetIndex, blob);
+      } else {
+        addPage(blob);
+      }
+
+      pendingCaptureRef.current = null;
+      setPendingCapture(null);
+      setReplaceIndex(null);
+      resetPdfOutput();
+      setAutoHint('Página agregada. Coloque el siguiente documento.');
+      setFlashing(true);
+      window.setTimeout(() => setFlashing(false), 220);
+      speakText('Escaneo terminado', voiceRef.current);
+    },
+    [addPage, replacePage, resetPdfOutput],
+  );
+
+  const handleEditorRetake = useCallback(() => {
+    pendingCaptureRef.current = null;
+    setPendingCapture(null);
+    setCaptureMessage('');
+  }, []);
 
   useEffect(() => {
     if (mode !== 'auto' || cameraState !== 'ready') {
+      return;
+    }
+
+    if (cvState !== 'ready') {
       return;
     }
 
@@ -465,7 +735,7 @@ export function ScannerPage() {
     let motionStreak = 0;
 
     const interval = window.setInterval(() => {
-      if (capturingRef.current) {
+      if (capturingRef.current || pendingCapture !== null) {
         return;
       }
 
@@ -484,25 +754,47 @@ export function ScannerPage() {
         return;
       }
 
-      const difference = meanAbsoluteDifference(
-        previousSignature,
-        signature,
-      );
+      const difference = meanAbsoluteDifference(previousSignature, signature);
       previousSignature = signature;
       const now = performance.now();
+      const detection = liveDetectionRef.current;
+      const detectionFresh = now - detection.updatedAt < 1200;
+      const detectionValid =
+        detection.corners !== null &&
+        detection.areaRatio >= LIVE_MIN_AREA_RATIO;
+      const detectionStable =
+        detection.status === 'stable' && detectionFresh && detectionValid;
 
       if (now < autoCooldownUntilRef.current) {
         return;
       }
 
       if (autoNeedsMovementRef.current) {
-        if (difference > MOTION_THRESHOLD) {
+        if (
+          difference > MOTION_THRESHOLD &&
+          detectionStable
+        ) {
           autoNeedsMovementRef.current = false;
           stableSince = now;
           motionStreak = 0;
           setAutoHint(
             'Documento detectado. Mantenga la página quieta dentro de la guía.',
           );
+        } else if (!detectionValid) {
+          setAutoHint('Ajuste el documento dentro de la guía.');
+        }
+        return;
+      }
+
+      if (!detectionStable) {
+        stableSince = null;
+
+        if (countdownRef.current !== null) {
+          countdownRef.current = null;
+          setCountdown(null);
+          setAutoHint('Ajuste el documento dentro de la guía.');
+        } else {
+          setAutoHint('Ajuste el documento dentro de la guía.');
         }
         return;
       }
@@ -519,9 +811,7 @@ export function ScannerPage() {
               'La imagen se movió. Cuenta regresiva cancelada; vuelva a estabilizarla.',
             );
           } else {
-            setAutoHint(
-              'Mantenga el documento quieto dentro de la guía.',
-            );
+            setAutoHint('Mantenga el documento quieto dentro de la guía.');
           }
         }
         return;
@@ -536,7 +826,7 @@ export function ScannerPage() {
 
         if (
           countdownRef.current === null &&
-          now - stableSince >= 1500
+          now - stableSince >= AUTO_STABILITY_MS
         ) {
           countdownRef.current = 3;
           setCountdown(3);
@@ -548,7 +838,7 @@ export function ScannerPage() {
     }, 250);
 
     return () => window.clearInterval(interval);
-  }, [cameraState, mode]);
+  }, [cameraState, mode, cvState, pendingCapture]);
 
   useEffect(() => {
     if (countdown === null) {
@@ -592,7 +882,7 @@ export function ScannerPage() {
     setCountdown(null);
     setAutoHint(
       nextMode === 'auto'
-        ? 'Detección básica de estabilidad. Mantenga el documento quieto durante 1.5 s; si se mueve, la cuenta se cancela.'
+        ? 'La captura automática exige cuatro esquinas estables y corrige la perspectiva.'
         : 'Coloque el documento dentro de la guía y manténgalo quieto.',
     );
   };
@@ -691,6 +981,43 @@ export function ScannerPage() {
     }
   };
 
+  const handleTorchToggle = async () => {
+    if (!torchSupported || torchBusy) {
+      return;
+    }
+
+    const track = streamRef.current?.getVideoTracks()[0];
+    if (!track) {
+      return;
+    }
+
+    const next = !torchOnRef.current;
+    setTorchBusy(true);
+
+    const applied = await setTorchEnabled(track, next);
+
+    if (applied) {
+      torchOnRef.current = next;
+      setTorchOn(next);
+    } else {
+      setTorchSupported(false);
+      setCaptureMessage(
+        'Flash no disponible en este dispositivo.',
+      );
+    }
+
+    setTorchBusy(false);
+  };
+
+  useEffect(() => {
+    const handleLogout = () => {
+      stopCamera();
+      setCameraState('starting');
+    };
+    window.addEventListener('docux:logout', handleLogout);
+    return () => window.removeEventListener('docux:logout', handleLogout);
+  }, [stopCamera]);
+
   const pageCountLabel = useMemo(
     () => `${pages.length} ${pages.length === 1 ? 'página' : 'páginas'}`,
     [pages.length],
@@ -703,6 +1030,13 @@ export function ScannerPage() {
       800,
     [pages],
   );
+
+  const liveOverlayPoints =
+    liveDetection.corners !== null
+      ? liveDetection.corners
+          .map((point) => `${point.x},${point.y}`)
+          .join(' ')
+      : '';
 
   return (
     <div className="page-stack">
@@ -738,6 +1072,9 @@ export function ScannerPage() {
               className={`mode-switch__button${
                 mode === 'auto' ? ' mode-switch__button--active' : ''
               }`}
+              disabled={
+                cvState === 'loading' || cvState === 'error'
+              }
               onClick={() => handleModeChange('auto')}
               type="button"
             >
@@ -757,6 +1094,32 @@ export function ScannerPage() {
             <span>Avisos de voz</span>
           </label>
         </div>
+
+        {cvState === 'loading' ? (
+          <div className="opencv-status" role="status">
+            <progress max={100} value={cvProgress} />
+            <span>Cargando detección OpenCV.js: {cvProgress}%</span>
+          </div>
+        ) : null}
+
+        {cvState === 'error' ? (
+          <div className="notice notice--info replace-notice">
+            <Icon name="info" size={20} />
+            <div>
+              <p>
+                La detección automática no está disponible. Puede capturar y
+                ajustar las esquinas manualmente.
+              </p>
+              <button
+                className="button button--secondary button--small"
+                onClick={() => setCvState('idle')}
+                type="button"
+              >
+                Reintentar detección
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div
           className={`camera-stage${
@@ -778,6 +1141,62 @@ export function ScannerPage() {
               <span className="scan-guide__corner scan-guide__corner--tr" />
               <span className="scan-guide__corner scan-guide__corner--bl" />
               <span className="scan-guide__corner scan-guide__corner--br" />
+            </div>
+          ) : null}
+
+          {cameraState === 'ready' &&
+          cvState === 'ready' &&
+          pendingCapture === null &&
+          liveDetection.corners !== null ? (
+            <svg
+              aria-hidden="true"
+              className={`detection-overlay detection-overlay--${liveDetection.status}`}
+              preserveAspectRatio="xMidYMid slice"
+              viewBox={`0 0 ${videoSize.width} ${videoSize.height}`}
+            >
+              <polygon points={liveOverlayPoints} />
+            </svg>
+          ) : null}
+
+          {cameraState === 'ready' ? (
+            <p
+              aria-live="polite"
+              className={`detection-badge detection-badge--${liveDetection.status}`}
+              role="status"
+            >
+              {liveDetection.status === 'stable'
+                ? 'Documento detectado'
+                : 'Ajuste el documento dentro de la guía'}
+            </p>
+          ) : null}
+
+          {cameraState === 'ready' ? (
+            <div className="camera-tools">
+              <button
+                aria-label={
+                  torchSupported
+                    ? torchOn
+                      ? 'Flash encendido'
+                      : 'Flash apagado'
+                    : 'Flash no disponible en este dispositivo'
+                }
+                aria-pressed={torchOn}
+                className={`torch-button${
+                  torchOn ? ' torch-button--on' : ''
+                }`}
+                disabled={!torchSupported || torchBusy}
+                onClick={() => void handleTorchToggle()}
+                type="button"
+              >
+                <Icon name="spark" size={18} />
+              </button>
+              <span className="torch-label">
+                {torchSupported
+                  ? torchOn
+                    ? 'Flash encendido'
+                    : 'Flash apagado'
+                  : 'Flash no disponible en este dispositivo'}
+              </span>
             </div>
           ) : null}
 
@@ -825,8 +1244,8 @@ export function ScannerPage() {
               {capturing ? 'Capturando…' : 'Capturar página'}
             </button>
             <p className="capture-hint">
-              Alinee el documento dentro de la guía. La captura se recorta a esa
-              área.
+              Alinee el documento dentro de la guía. Después podrá ajustar las
+              cuatro esquinas.
             </p>
           </div>
         ) : (
@@ -836,8 +1255,8 @@ export function ScannerPage() {
               {autoHint}
             </p>
             <p className="capture-hint">
-              Modo automático básico: usa diferencia entre fotogramas, no
-              reconoce bordes ni corrige perspectiva.
+              Modo automático: la captura exige cuatro esquinas estables y corrige
+              la perspectiva.
             </p>
           </div>
         )}
@@ -1014,6 +1433,14 @@ export function ScannerPage() {
           blob={pages[previewIndex].blob}
           index={previewIndex}
           onClose={() => setPreviewIndex(null)}
+        />
+      ) : null}
+
+      {pendingCapture ? (
+        <DocumentEditor
+          capture={pendingCapture}
+          onConfirm={handleEditorConfirm}
+          onRetake={handleEditorRetake}
         />
       ) : null}
     </div>

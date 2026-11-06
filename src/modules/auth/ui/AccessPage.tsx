@@ -1,26 +1,37 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from './sessionContext';
+import { useScanSession } from '../../scanner/ui/scanSessionContext';
+import { speakText, WELCOME_MESSAGE } from '../../scanner/infrastructure/feedback';
 import { Brand } from '../../../shared/ui/Brand';
 import { Icon } from '../../../shared/ui/Icon';
 import { usePageTitle } from '../../../shared/ui/usePageTitle';
 
 export function AccessPage() {
   const { startSession } = useSession();
+  const { voiceEnabled } = useScanSession();
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const welcomeSpokenRef = useRef(false);
   usePageTitle('Acceso');
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    // Autenticación provisional de Fase 1: contraseña fija y sesión en
-    // sessionStorage. No es seguridad de producción y se sustituirá por
-    // autenticación local verificada en una fase posterior.
     if (password === '123') {
       startSession();
+
+      if (!welcomeSpokenRef.current) {
+        welcomeSpokenRef.current = true;
+        speakText(WELCOME_MESSAGE, voiceEnabled, {
+          lang: 'es-PE',
+          rate: 0.95,
+          volume: 1,
+        });
+      }
+
       navigate('/panel', { replace: true });
       return;
     }
