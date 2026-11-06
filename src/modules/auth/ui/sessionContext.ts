@@ -3,7 +3,7 @@ import type { AppSession } from '../domain/session';
 
 export interface SessionContextValue {
   session: AppSession | null;
-  startPreview: () => void;
+  startSession: () => void;
   endSession: () => void;
 }
 

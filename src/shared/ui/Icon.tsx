@@ -14,7 +14,8 @@ export type IconName =
   | 'spark'
   | 'lock'
   | 'info'
-  | 'check';
+  | 'check'
+  | 'logout';
 
 interface IconProps {
   name: IconName;
@@ -112,6 +113,13 @@ const paths: Record<IconName, ReactNode> = {
   check: (
     <>
       <path d="m5 12.5 4.2 4.2L19 6.8" />
+    </>
+  ),
+  logout: (
+    <>
+      <path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5" />
+      <path d="M15 8l4 4-4 4" />
+      <path d="M19 12H9" />
     </>
   ),
 };

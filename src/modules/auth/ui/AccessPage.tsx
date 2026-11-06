@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from './sessionContext';
 import { Brand } from '../../../shared/ui/Brand';
@@ -5,13 +7,26 @@ import { Icon } from '../../../shared/ui/Icon';
 import { usePageTitle } from '../../../shared/ui/usePageTitle';
 
 export function AccessPage() {
-  const { startPreview } = useSession();
+  const { startSession } = useSession();
   const navigate = useNavigate();
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   usePageTitle('Acceso');
 
-  const handlePreview = () => {
-    startPreview();
-    navigate('/panel', { replace: true });
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    // Autenticación provisional de Fase 1: contraseña fija y sesión en
+    // sessionStorage. No es seguridad de producción y se sustituirá por
+    // autenticación local verificada en una fase posterior.
+    if (password === '123') {
+      startSession();
+      navigate('/panel', { replace: true });
+      return;
+    }
+
+    setError('Contraseña incorrecta');
+    setPassword('');
   };
 
   return (
@@ -19,29 +34,43 @@ export function AccessPage() {
       <section className="access-card" aria-labelledby="access-title">
         <Brand variant="hero" />
 
-        <p className="eyebrow">Fase 1A · Base del proyecto</p>
+        <p className="eyebrow">DOCUX · Fase 1</p>
         <h1 id="access-title">Acceso local</h1>
         <p className="access-card__lead">
-          Esta primera base permite revisar la estructura y el diseño de DOCUX.
-          El registro y el inicio de sesión se implementarán en la Subfase 1B.
+          Ingrese la contraseña de esta instalación para abrir DOCUX.
         </p>
 
-        <div className="notice notice--info">
-          <Icon name="info" size={20} />
-          <p>
-            La vista previa no es una autenticación. No se solicitan
-            credenciales y la sesión se cierra al recargar la página.
-          </p>
-        </div>
+        <form className="access-form" onSubmit={handleSubmit}>
+          <div className="field">
+            <label htmlFor="access-password">Contraseña</label>
+            <input
+              aria-describedby={error ? 'access-error' : undefined}
+              aria-invalid={error ? true : undefined}
+              autoComplete="current-password"
+              id="access-password"
+              onChange={(event) => {
+                setPassword(event.target.value);
+                setError('');
+              }}
+              type="password"
+              value={password}
+            />
+          </div>
 
-        <button
-          className="button button--primary button--wide"
-          onClick={handlePreview}
-          type="button"
-        >
-          Explorar la interfaz en modo vista previa
-          <Icon name="arrow-right" size={20} />
-        </button>
+          {error ? (
+            <p className="field-error" id="access-error" role="alert">
+              {error}
+            </p>
+          ) : null}
+
+          <button
+            className="button button--primary button--wide"
+            type="submit"
+          >
+            Ingresar
+            <Icon name="arrow-right" size={20} />
+          </button>
+        </form>
 
         <p className="access-card__footnote">
           DOCUX · Digitaliza. Gestiona. Avanza.

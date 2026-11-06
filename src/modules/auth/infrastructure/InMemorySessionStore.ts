@@ -1,8 +1,7 @@
 import type { AppSession, SessionStore } from '../domain/session';
 
 /**
- * Adaptador en memoria para la base visual de la Subfase 1A.
- * La sesión desaparece al recargar y no concede acceso a datos reales.
+ * Adaptador en memoria para pruebas. La sesión no se persiste.
  */
 export class InMemorySessionStore implements SessionStore {
   private current: AppSession | null = null;
@@ -17,14 +16,14 @@ export class InMemorySessionStore implements SessionStore {
     };
   };
 
-  startPreview = (): AppSession => {
-    if (this.current?.kind === 'preview') {
+  startSession = (): AppSession => {
+    if (this.current?.kind === 'phase1') {
       return this.current;
     }
 
     const session: AppSession = {
-      kind: 'preview',
-      label: 'Vista previa de interfaz',
+      kind: 'phase1',
+      label: 'Sesión de Fase 1',
       startedAt: new Date().toISOString(),
     };
 

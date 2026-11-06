@@ -5,21 +5,21 @@ import {
   RouterProvider,
 } from 'react-router-dom';
 import { InMemorySessionStore } from '../modules/auth/infrastructure/InMemorySessionStore';
-import { SessionProvider } from '../modules/auth/ui/SessionProvider';
+import { AppProviders } from '../app/providers';
 import { appRoutes } from '../app/routes';
 
 interface RenderRouteOptions {
-  preview?: boolean;
+  authenticated?: boolean;
 }
 
 export function renderRoute(
   initialPath: string,
-  { preview = false }: RenderRouteOptions = {},
+  { authenticated = false }: RenderRouteOptions = {},
 ) {
   const store = new InMemorySessionStore();
 
-  if (preview) {
-    store.startPreview();
+  if (authenticated) {
+    store.startSession();
   }
 
   const router = createMemoryRouter(appRoutes, {
@@ -27,9 +27,9 @@ export function renderRoute(
   });
 
   const view = render(
-    <SessionProvider store={store}>
+    <AppProviders sessionStore={store}>
       <RouterProvider router={router} />
-    </SessionProvider>,
+    </AppProviders>,
   );
 
   return {

@@ -24,8 +24,8 @@ export function SessionProvider({ store, children }: SessionProviderProps) {
 
   const session = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  const startPreview = useCallback(() => {
-    store.startPreview();
+  const startSession = useCallback(() => {
+    store.startSession();
   }, [store]);
 
   const endSession = useCallback(() => {
@@ -33,8 +33,8 @@ export function SessionProvider({ store, children }: SessionProviderProps) {
   }, [store]);
 
   const value = useMemo<SessionContextValue>(
-    () => ({ session, startPreview, endSession }),
-    [endSession, session, startPreview],
+    () => ({ session, startSession, endSession }),
+    [endSession, session, startSession],
   );
 
   return (

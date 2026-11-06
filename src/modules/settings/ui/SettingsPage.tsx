@@ -2,19 +2,20 @@ import { Icon } from '../../../shared/ui/Icon';
 import { PageHeader } from '../../../shared/ui/PageHeader';
 
 const settings = [
-  { label: 'Tema', value: 'Claro' },
-  { label: 'Idioma', value: 'Español' },
-  { label: 'Almacenamiento previsto', value: 'IndexedDB local' },
-  { label: 'Sesión', value: 'Se implementará en la Subfase 1B' },
-  { label: 'Respaldo', value: 'Se implementará en la Subfase 1F' },
-  { label: 'Instalación', value: 'PWA, prevista para la Subfase 1G' },
+  { label: 'Versión', value: 'DOCUX, Fase 1' },
+  { label: 'Acceso', value: 'Contraseña provisional' },
+  { label: 'Sesión', value: 'sessionStorage (se pierde al cerrar la pestaña)' },
+  { label: 'Documentos', value: 'IndexedDB local (docux-phase1)' },
+  { label: 'PDF', value: 'A4 multipágina generado en el navegador' },
+  { label: 'Voz', value: 'Español (es-PE), desactivable en el escáner' },
+  { label: 'Cámara', value: 'Cámara posterior cuando está disponible' },
 ];
 
 export function SettingsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        description="Decisiones iniciales de la base. En esta entrega todavía no hay ajustes editables."
+        description="Características de esta entrega y su alcance real."
         eyebrow="Configuración"
         title="Configuración de DOCUX"
       />
@@ -25,8 +26,8 @@ export function SettingsPage() {
             <Icon name="settings" size={24} />
           </span>
           <div>
-            <h2 id="settings-title">Valores de esta base</h2>
-            <p>Información de referencia, no configurable en 1A.</p>
+            <h2 id="settings-title">Valores de la Fase 1</h2>
+            <p>Información de referencia. Los ajustes se editan en el escáner.</p>
           </div>
         </div>
 
@@ -43,12 +44,12 @@ export function SettingsPage() {
       <section className="notice notice--info" aria-labelledby="security-title">
         <Icon name="lock" size={22} />
         <div>
-          <h2 id="security-title">Privacidad local</h2>
+          <h2 id="security-title">Acceso provisional</h2>
           <p>
-            DOCUX no tendrá backend ni sincronización en la Fase 1. La
-            autenticación local protegerá el acceso casual, pero no equivale a
-            cifrado del dispositivo. Esta diferencia se documentará antes de
-            habilitar el acceso real.
+            La contraseña de la Fase 1 es una protección de acceso básica, no
+            seguridad de producción. No hay backend, cifrado de documentos ni
+            sincronización remota. Los PDF se guardan en el almacenamiento del
+            navegador de este dispositivo.
           </p>
         </div>
       </section>

@@ -8,14 +8,14 @@ describe('InMemorySessionStore', () => {
     expect(store.getSnapshot()).toBeNull();
   });
 
-  it('activa una sesión de vista previa y notifica a los suscriptores', () => {
+  it('activa una sesión de Fase 1 y notifica a los suscriptores', () => {
     const store = new InMemorySessionStore();
     const listener = vi.fn();
 
     store.subscribe(listener);
-    const session = store.startPreview();
+    const session = store.startSession();
 
-    expect(session.kind).toBe('preview');
+    expect(session.kind).toBe('phase1');
     expect(store.getSnapshot()).toEqual(session);
     expect(listener).toHaveBeenCalledTimes(1);
   });
@@ -25,7 +25,7 @@ describe('InMemorySessionStore', () => {
     const listener = vi.fn();
     const unsubscribe = store.subscribe(listener);
 
-    store.startPreview();
+    store.startSession();
     unsubscribe();
     store.clear();
 

@@ -54,8 +54,16 @@ export function AppLayout() {
         </nav>
 
         <div className="app-sidebar__footer">
-          <p>Fase 1A · Base local</p>
-          <p>Modo de revisión sin autenticación real.</p>
+          <p>DOCUX · Fase 1</p>
+          <p>Los documentos permanecen en este dispositivo.</p>
+          <button
+            className="button button--sidebar"
+            onClick={endSession}
+            type="button"
+          >
+            <Icon name="logout" size={18} />
+            Cerrar sesión
+          </button>
         </div>
       </aside>
 
@@ -67,29 +75,20 @@ export function AppLayout() {
               Digitaliza. Gestiona. Avanza.
             </span>
           </div>
-          <span className="tag tag--preview">Vista previa</span>
-        </header>
-
-        <div
-          aria-label="Aviso de modo vista previa"
-          className="preview-banner"
-          role="note"
-        >
-          <div className="preview-banner__copy">
-            <Icon name="info" size={18} />
-            <p>
-              <strong>Modo vista previa.</strong> La autenticación local se
-              habilitará en la Subfase 1B. Esta sesión no protege datos.
-            </p>
+          <div className="mobile-header__actions">
+            <span className="tag tag--phase">Fase 1</span>
+            <button
+              aria-label="Cerrar sesión"
+              className="mobile-logout"
+              onClick={endSession}
+              title="Cerrar sesión"
+              type="button"
+            >
+              <Icon name="logout" size={19} />
+              <span aria-hidden="true">Salir</span>
+            </button>
           </div>
-          <button
-            className="button button--quiet button--small"
-            onClick={endSession}
-            type="button"
-          >
-            Salir de la vista previa
-          </button>
-        </div>
+        </header>
 
         <p
           aria-atomic="true"

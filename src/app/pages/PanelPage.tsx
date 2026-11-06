@@ -4,62 +4,68 @@ import { PageHeader } from '../../shared/ui/PageHeader';
 
 const modules = [
   {
+    to: '/escanear',
+    icon: 'scan' as const,
+    title: 'Escanear documento',
+    description:
+      'Capture páginas con la cámara posterior en modo manual o automático y genere un PDF.',
+  },
+  {
     to: '/documentos',
     icon: 'documents' as const,
-    title: 'Mis documentos',
+    title: 'Documentos recientes',
     description:
-      'Consulta y organiza los documentos capturados. La vista tomará datos locales en la Subfase 1D.',
-    badge: 'Planificado',
+      'Consulte, descargue, comparta o elimine los PDF guardados en este dispositivo.',
   },
   {
     to: '/respaldos',
     icon: 'backup' as const,
-    title: 'Copias de seguridad',
+    title: 'Copias y respaldo',
     description:
-      'Exporta e importa un respaldo validado. La función se habilitará en la Subfase 1F.',
-    badge: 'Planificado',
+      'Aprenda a conservar una copia externa de sus documentos desde el mismo dispositivo.',
   },
   {
     to: '/configuracion',
     icon: 'settings' as const,
     title: 'Configuración',
     description:
-      'Revisa las decisiones de esta base. Los ajustes editables se incorporarán más adelante.',
-    badge: 'Base',
+      'Revise cómo funciona el acceso provisional, el almacenamiento local y los avisos de voz.',
   },
 ];
 
-const statusItems = [
-  'Navegación, diseño adaptable y manejo de errores.',
-  'Acceso local con contraseña y recuperación.',
-  'Cámara y captura manual de páginas.',
-  'Documentos, páginas, PDF, historial y respaldos.',
-  'Instalación PWA, funcionamiento sin conexión y validación final.',
+const completedItems = [
+  'Acceso provisional con sesión en sessionStorage.',
+  'Captura real con la cámara posterior y guía de encuadre.',
+  'Modo manual y modo automático básico por estabilidad.',
+  'Voz en español, sonido de captura y avisos configurables.',
+  'Páginas numeradas con vista, reemplazo, giro y orden.',
+  'PDF A4 multipágina, descarga y uso compartido.',
+  'Documentos recientes guardados en IndexedDB.',
 ];
 
 export function PanelPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        description="Esta es la base visual de la Fase 1A. Puedes recorrer todas las pantallas; las funciones se habilitarán en las subfases siguientes."
+        description="DOCUX, Fase 1. Escanee, organice y genere PDF directamente en este dispositivo."
         eyebrow="Panel"
         title="Tu espacio de digitalización"
       />
 
       <section className="welcome-card" aria-labelledby="welcome-title">
         <div className="welcome-card__copy">
-          <span className="tag tag--soft">Base 1A</span>
-          <h2 id="welcome-title">Preparado para digitalizar</h2>
+          <span className="tag tag--soft">Fase 1</span>
+          <h2 id="welcome-title">Escanee su primera página</h2>
           <p>
-            La pantalla de escaneo ya forma parte de la navegación. La cámara y
-            la captura manual se activarán en la Subfase 1C.
+            La cámara se abre en el escáner. Capture una o varias páginas,
+            revise el orden y genere un PDF A4 para descargarlo o compartirlo.
           </p>
         </div>
         <Link className="button button--light" to="/escanear">
-          Abrir pantalla de escaneo
+          Abrir escáner
           <Icon name="arrow-right" size={20} />
         </Link>
-        <div className="welcome-card__decoration" aria-hidden="true">
+        <div aria-hidden="true" className="welcome-card__decoration">
           <Icon name="scan" size={124} />
         </div>
       </section>
@@ -68,26 +74,21 @@ export function PanelPage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Accesos</p>
-            <h2 id="modules-title">Módulos principales</h2>
+            <h2 id="modules-title">Módulos de la Fase 1</h2>
           </div>
-          <p>Navegación disponible en esta base.</p>
+          <p>Funciones disponibles en esta entrega.</p>
         </div>
 
         <div className="module-grid">
           {modules.map((module) => (
-            <Link
-              className="module-card"
-              key={module.to}
-              to={module.to}
-            >
+            <Link className="module-card" key={module.to} to={module.to}>
               <span className="module-card__icon">
                 <Icon name={module.icon} size={24} />
               </span>
-              <span className="tag tag--muted">{module.badge}</span>
               <h3>{module.title}</h3>
               <p>{module.description}</p>
               <span className="module-card__link">
-                Abrir pantalla
+                Abrir
                 <Icon name="arrow-right" size={18} />
               </span>
             </Link>
@@ -98,30 +99,28 @@ export function PanelPage() {
       <section className="status-panel" aria-labelledby="status-title">
         <div className="section-heading section-heading--compact">
           <div>
-            <p className="eyebrow">Ruta de la Fase 1</p>
-            <h2 id="status-title">Estado del proyecto</h2>
+            <p className="eyebrow">Fase 1</p>
+            <h2 id="status-title">Funciones terminadas</h2>
           </div>
-          <span className="tag tag--preview">Vista previa</span>
+          <span className="tag tag--muted">Disponible</span>
         </div>
 
         <ol className="status-list">
-          {statusItems.map((item, index) => (
+          {completedItems.map((item) => (
             <li key={item}>
               <span
                 aria-hidden="true"
-                className={`status-list__marker${
-                  index === 0 ? ' status-list__marker--done' : ''
-                }`}
+                className="status-list__marker status-list__marker--done"
               >
-                {index === 0 ? <Icon name="check" size={15} /> : index + 1}
+                <Icon name="check" size={15} />
               </span>
               <span>{item}</span>
             </li>
           ))}
         </ol>
         <p className="status-panel__note">
-          Esta vista no sustituye las funciones pendientes ni representa datos
-          reales.
+          El modo automático usa detección básica de estabilidad; no incluye
+          reconocimiento de bordes, corrección de perspectiva ni OCR.
         </p>
       </section>
     </div>
