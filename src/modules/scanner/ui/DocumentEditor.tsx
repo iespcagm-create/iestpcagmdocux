@@ -36,6 +36,7 @@ export interface PendingCapture {
   width: number;
   height: number;
   targetIndex: number | null;
+  guideCorners: Quad | null;
 }
 
 interface DocumentEditorProps {
@@ -73,10 +74,10 @@ export function DocumentEditor({
   const userAdjustedRef = useRef(false);
   const dragRef = useRef<{ index: number; pointerId: number } | null>(null);
   const [corners, setCorners] = useState<Quad>(() =>
-    fallbackQuad(capture.width, capture.height),
+    capture.guideCorners ?? fallbackQuad(capture.width, capture.height),
   );
   const [initialCorners, setInitialCorners] = useState<Quad>(() =>
-    fallbackQuad(capture.width, capture.height),
+    capture.guideCorners ?? fallbackQuad(capture.width, capture.height),
   );
   const [filter, setFilter] = useState<PageFilter>('document');
   const [status, setStatus] = useState('Detectando documento');
@@ -167,7 +168,9 @@ export function DocumentEditor({
             'Documento detectado. Arrastre las esquinas si es necesario.',
           );
         } else {
-          const fallback = fallbackQuad(capture.width, capture.height);
+          const fallback =
+            capture.guideCorners ??
+            fallbackQuad(capture.width, capture.height);
 
           if (applyToCurrent) {
             setCorners(fallback);
@@ -191,7 +194,7 @@ export function DocumentEditor({
         }
       }
     },
-    [capture.blob, capture.height, capture.width],
+    [capture.blob, capture.guideCorners, capture.height, capture.width],
   );
 
   useEffect(() => {

@@ -5,7 +5,7 @@ export interface SourceRect {
   height: number;
 }
 
-function getSourceRect(
+export function getSourceRect(
   video: HTMLVideoElement,
   guide: HTMLElement | null,
 ): SourceRect | null {

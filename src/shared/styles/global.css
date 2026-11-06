@@ -1367,20 +1367,54 @@ body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(84%, 620px);
-  height: 72%;
-  border: 1.5px dashed rgb(255 255 255 / 75%);
-  border-radius: 8px;
+  width: min(88%, 420px);
+  max-height: 78%;
+  aspect-ratio: 210 / 297;
+  border: 2.5px solid #fbbf24;
+  border-radius: 10px;
   box-shadow: 0 0 0 9999px rgb(3 12 24 / 42%);
   transform: translate(-50%, -50%);
   pointer-events: none;
+  z-index: 1;
 }
 
-.scan-guide__corner {
-  position: absolute;
-  width: 26px;
-  height: 26px;
-  border: 3px solid var(--cyan-400);
+.scan-guide--horizontal {
+  aspect-ratio: 297 / 210;
+}
+
+.scan-guide--detected {
+  border-color: #22c55e;
+}
+
+.scan-orientation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-strong);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.scan-orientation__button {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.scan-orientation__button--active {
+  background: var(--navy-900);
+  color: #ffffff;
+  border-color: var(--navy-900);
 }
 
 .scan-guide__corner--tl {
@@ -2427,5 +2461,21 @@ body {
   .doc-editor__actions {
     grid-template-columns: 1fr;
   }
+}
+
+.debug-panel {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--navy-900);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.debug-panel p {
+  margin: 0;
 }
 

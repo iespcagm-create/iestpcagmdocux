@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -16,6 +16,7 @@ import { useObjectUrl } from '../../../shared/utils/useObjectUrl';
 import { saveDocument } from '../../documents/infrastructure/indexedDb';
 import {
   captureVideoFrame,
+  getSourceRect,
   getFrameSignature,
   meanAbsoluteDifference,
   rotateImageBlob,
@@ -70,12 +71,12 @@ const EMPTY_DETECTION: LiveDetection = {
   updatedAt: 0,
 };
 
-const STABLE_THRESHOLD = 5.5;
+const STABLE_THRESHOLD = 8;
 const MOTION_THRESHOLD = 12;
 const AUTO_COOLDOWN_MS = 2300;
-const AUTO_STABILITY_MS = 1500;
-const LIVE_STABILITY_MOVEMENT = 0.018;
-const LIVE_MIN_AREA_RATIO = 0.2;
+const AUTO_STABILITY_MS = 1200;
+const LIVE_STABILITY_MOVEMENT = 0.03;
+const LIVE_MIN_AREA_RATIO = 0.15;
 const MAX_CAPTURE_SIDE = 2400;
 
 function createDocumentId(): string {
@@ -108,20 +109,20 @@ function cameraErrorMessage(error: unknown): string {
   switch (name) {
     case 'NotAllowedError':
     case 'PermissionDeniedError':
-      return 'Permiso de cámara denegado. Habilite la cámara para DOCUX en la configuración del navegador y vuelva a intentarlo.';
+      return 'Permiso de cÃ¡mara denegado. Habilite la cÃ¡mara para DOCUX en la configuraciÃ³n del navegador y vuelva a intentarlo.';
     case 'NotFoundError':
     case 'DevicesNotFoundError':
-      return 'No se encontró una cámara en este dispositivo.';
+      return 'No se encontrÃ³ una cÃ¡mara en este dispositivo.';
     case 'NotReadableError':
     case 'TrackStartError':
-      return 'La cámara está ocupada por otra aplicación. Cierre la otra aplicación y vuelva a intentarlo.';
+      return 'La cÃ¡mara estÃ¡ ocupada por otra aplicaciÃ³n. Cierre la otra aplicaciÃ³n y vuelva a intentarlo.';
     case 'OverconstrainedError':
     case 'ConstraintNotSatisfiedError':
-      return 'La cámara no admite la configuración solicitada. Se intentará con la cámara disponible.';
+      return 'La cÃ¡mara no admite la configuraciÃ³n solicitada. Se intentarÃ¡ con la cÃ¡mara disponible.';
     case 'SecurityError':
-      return 'El navegador bloqueó la cámara. Abra DOCUX con HTTPS o desde localhost.';
+      return 'El navegador bloqueÃ³ la cÃ¡mara. Abra DOCUX con HTTPS o desde localhost.';
     default:
-      return 'No se pudo iniciar la cámara. Compruebe los permisos o use un navegador compatible con HTTPS o localhost.';
+      return 'No se pudo iniciar la cÃ¡mara. Compruebe los permisos o use un navegador compatible con HTTPS o localhost.';
   }
 }
 
@@ -164,18 +165,18 @@ function PageCard({
   return (
     <article className={`scan-page${replacing ? ' scan-page--replacing' : ''}`}>
       <button
-        aria-label={`Ver página ${index + 1}`}
+        aria-label={`Ver pÃ¡gina ${index + 1}`}
         className="scan-page__thumb"
         onClick={onView}
         type="button"
       >
-        {url ? <img alt={`Página ${index + 1}`} src={url} /> : null}
+        {url ? <img alt={`PÃ¡gina ${index + 1}`} src={url} /> : null}
         <span className="scan-page__number">{index + 1}</span>
       </button>
 
       <div className="scan-page__body">
         <div className="scan-page__heading">
-          <strong>Página {index + 1}</strong>
+          <strong>PÃ¡gina {index + 1}</strong>
           {replacing ? <span className="tag tag--soft-dark">Reemplazar</span> : null}
         </div>
 
@@ -200,7 +201,7 @@ function PageCard({
             onClick={() => void handleRotate()}
             type="button"
           >
-            {rotating ? 'Girando…' : 'Girar 90°'}
+            {rotating ? 'Girandoâ€¦' : 'Girar 90Â°'}
           </button>
           <button
             className="button button--secondary button--small"
@@ -272,7 +273,7 @@ function PagePreview({ blob, index, onClose }: PagePreviewProps) {
         role="dialog"
       >
         <div className="page-modal__header">
-          <h2 id="page-preview-title">Página {index + 1}</h2>
+          <h2 id="page-preview-title">PÃ¡gina {index + 1}</h2>
           <button
             className="button button--secondary button--small"
             onClick={onClose}
@@ -282,7 +283,7 @@ function PagePreview({ blob, index, onClose }: PagePreviewProps) {
             Cerrar
           </button>
         </div>
-        {url ? <img alt={`Vista de la página ${index + 1}`} src={url} /> : null}
+        {url ? <img alt={`Vista de la pÃ¡gina ${index + 1}`} src={url} /> : null}
       </div>
     </div>
   );
@@ -300,11 +301,14 @@ export function ScannerPage() {
   } = useScanSession();
 
   const [mode, setMode] = useState<CaptureMode>('manual');
+  const [guideOrientation, setGuideOrientation] = useState<'vertical' | 'horizontal'>(
+    'vertical',
+  );
   const [cameraState, setCameraState] = useState<CameraState>('starting');
   const [cameraError, setCameraError] = useState('');
   const [captureMessage, setCaptureMessage] = useState('');
   const [autoHint, setAutoHint] = useState(
-    'Coloque el documento dentro de la guía y manténgalo quieto.',
+    'Coloque el documento dentro de la guÃ­a y mantÃ©ngalo quieto.',
   );
   const [countdown, setCountdown] = useState<number | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -327,6 +331,7 @@ export function ScannerPage() {
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [torchBusy, setTorchBusy] = useState(false);
+  const [autoNeedsMovement, setAutoNeedsMovement] = useState(false);
   const [liveDetection, setLiveDetection] = useState<LiveDetection>(EMPTY_DETECTION);
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
 
@@ -403,7 +408,7 @@ export function ScannerPage() {
     if (!window.isSecureContext) {
       setCameraState('error');
       setCameraError(
-        'Navegador incompatible o contexto no seguro. Abra DOCUX con HTTPS o desde localhost para usar la cámara.',
+        'Navegador incompatible o contexto no seguro. Abra DOCUX con HTTPS o desde localhost para usar la cÃ¡mara.',
       );
       return;
     }
@@ -411,7 +416,7 @@ export function ScannerPage() {
     if (isCameraBlockedByPolicy()) {
       setCameraState('error');
       setCameraError(
-        'La política de seguridad del sitio está bloqueando la cámara. El administrador debe permitir camera=(self) en la cabecera Permissions-Policy.',
+        'La polÃ­tica de seguridad del sitio estÃ¡ bloqueando la cÃ¡mara. El administrador debe permitir camera=(self) en la cabecera Permissions-Policy.',
       );
       return;
     }
@@ -419,7 +424,7 @@ export function ScannerPage() {
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraState('error');
       setCameraError(
-        'Navegador incompatible: no admite acceso a la cámara. Use Chrome, Edge, Firefox o Safari actualizado.',
+        'Navegador incompatible: no admite acceso a la cÃ¡mara. Use Chrome, Edge, Firefox o Safari actualizado.',
       );
       return;
     }
@@ -527,7 +532,7 @@ export function ScannerPage() {
             setCvState('error');
             setMode('manual');
             setAutoHint(
-              'La detección automática no está disponible. Use el ajuste manual.',
+              'La detecciÃ³n automÃ¡tica no estÃ¡ disponible. Use el ajuste manual.',
             );
           }
         });
@@ -666,23 +671,36 @@ export function ScannerPage() {
     try {
       const blob = await captureVideoFrame(video, null, MAX_CAPTURE_SIDE);
       const size = await getImageDimensions(blob);
+      const guideRect = getSourceRect(video, guideRef.current);
+      const guideCorners = guideRect
+        ? ([
+            { x: guideRect.x, y: guideRect.y },
+            { x: guideRect.x + guideRect.width, y: guideRect.y },
+            {
+              x: guideRect.x + guideRect.width,
+              y: guideRect.y + guideRect.height,
+            },
+            { x: guideRect.x, y: guideRect.y + guideRect.height },
+          ] as Quad)
+        : null;
       const capture: PendingCapture = {
         blob,
         width: size.width,
         height: size.height,
         targetIndex: replaceIndex,
+        guideCorners,
       };
 
       pendingCaptureRef.current = capture;
       setPendingCapture(capture);
       autoCooldownUntilRef.current = performance.now() + AUTO_COOLDOWN_MS;
-      autoNeedsMovementRef.current = true;
+      autoNeedsMovementRef.current = true; setAutoNeedsMovement(true);
       setFlashing(true);
       window.setTimeout(() => setFlashing(false), 220);
       playCaptureSound();
     } catch {
       setCaptureMessage(
-        'No se pudo capturar la página. Mantenga la cámara activa y vuelva a intentarlo.',
+        'No se pudo capturar la pÃ¡gina. Mantenga la cÃ¡mara activa y vuelva a intentarlo.',
       );
     } finally {
       capturingRef.current = false;
@@ -707,7 +725,7 @@ export function ScannerPage() {
       setPendingCapture(null);
       setReplaceIndex(null);
       resetPdfOutput();
-      setAutoHint('Página agregada. Coloque el siguiente documento.');
+      setAutoHint('PÃ¡gina agregada. Coloque el siguiente documento.');
       setFlashing(true);
       window.setTimeout(() => setFlashing(false), 220);
       speakText('Escaneo terminado', voiceRef.current);
@@ -733,6 +751,7 @@ export function ScannerPage() {
     let previousSignature: Uint8ClampedArray | null = null;
     let stableSince: number | null = null;
     let motionStreak = 0;
+    let noDetectionStableSince: number | null = null;
 
     const interval = window.setInterval(() => {
       if (capturingRef.current || pendingCapture !== null) {
@@ -769,32 +788,60 @@ export function ScannerPage() {
         return;
       }
 
+      if (!detectionValid) {
+        if (difference <= STABLE_THRESHOLD) {
+          if (noDetectionStableSince === null) {
+            noDetectionStableSince = now;
+          }
+        } else {
+          noDetectionStableSince = null;
+        }
+      } else {
+        noDetectionStableSince = null;
+      }
+
+      const fallbackReady =
+        !detectionValid &&
+        noDetectionStableSince !== null &&
+        now - noDetectionStableSince >= 3000;
+      const canProceed = detectionStable || fallbackReady;
+
       if (autoNeedsMovementRef.current) {
         if (
           difference > MOTION_THRESHOLD &&
-          detectionStable
+          canProceed
         ) {
-          autoNeedsMovementRef.current = false;
+          autoNeedsMovementRef.current = false; setAutoNeedsMovement(false);
           stableSince = now;
           motionStreak = 0;
           setAutoHint(
-            'Documento detectado. Mantenga la página quieta dentro de la guía.',
+            fallbackReady
+              ? 'DetecciÃ³n parcial. Mantenga estable para capturar.'
+              : 'Documento detectado. Mantenga la pÃ¡gina quieta dentro de la guÃ­a.',
           );
         } else if (!detectionValid) {
-          setAutoHint('Ajuste el documento dentro de la guía.');
+          setAutoHint('Coloque la hoja completa dentro del marco.');
         }
         return;
       }
 
-      if (!detectionStable) {
+      if (!canProceed) {
         stableSince = null;
 
         if (countdownRef.current !== null) {
           countdownRef.current = null;
           setCountdown(null);
-          setAutoHint('Ajuste el documento dentro de la guía.');
+          setAutoHint(
+            fallbackReady
+              ? 'DetecciÃ³n parcial. Mantenga estable para capturar.'
+              : 'Coloque la hoja completa dentro del marco.',
+          );
         } else {
-          setAutoHint('Ajuste el documento dentro de la guía.');
+          setAutoHint(
+            fallbackReady
+              ? 'DetecciÃ³n parcial. Mantenga estable para capturar.'
+              : 'Coloque la hoja completa dentro del marco.',
+          );
         }
         return;
       }
@@ -808,10 +855,10 @@ export function ScannerPage() {
             countdownRef.current = null;
             setCountdown(null);
             setAutoHint(
-              'La imagen se movió. Cuenta regresiva cancelada; vuelva a estabilizarla.',
+              'La imagen se moviÃ³. Cuenta regresiva cancelada; vuelva a estabilizarla.',
             );
           } else {
-            setAutoHint('Mantenga el documento quieto dentro de la guía.');
+            setAutoHint('Mantenga el documento quieto dentro de la guÃ­a.');
           }
         }
         return;
@@ -831,7 +878,7 @@ export function ScannerPage() {
           countdownRef.current = 3;
           setCountdown(3);
           setAutoHint(
-            'Imagen estable. Captura automática en 3 segundos.',
+            'Imagen estable. Captura automÃ¡tica en 3 segundos.',
           );
         }
       }
@@ -852,7 +899,7 @@ export function ScannerPage() {
         void capturePage().then(() => {
           if (mode === 'auto') {
             setAutoHint(
-              'Página capturada. Retire el documento y coloque la siguiente página.',
+              'PÃ¡gina capturada. Retire el documento y coloque la siguiente pÃ¡gina.',
             );
           }
         });
@@ -880,10 +927,11 @@ export function ScannerPage() {
     setCaptureMessage('');
     countdownRef.current = null;
     setCountdown(null);
+    autoNeedsMovementRef.current = nextMode === 'manual'; setAutoNeedsMovement(nextMode === 'manual');
     setAutoHint(
       nextMode === 'auto'
-        ? 'La captura automática exige cuatro esquinas estables y corrige la perspectiva.'
-        : 'Coloque el documento dentro de la guía y manténgalo quieto.',
+        ? 'La captura automÃ¡tica exige cuatro esquinas estables y corrige la perspectiva.'
+        : 'Coloque el documento dentro de la guÃ­a y mantÃ©ngalo quieto.',
     );
   };
 
@@ -894,14 +942,14 @@ export function ScannerPage() {
 
   const handleGeneratePdf = async () => {
     if (pages.length === 0) {
-      setPdfMessage('Agregue al menos una página antes de generar el PDF.');
+      setPdfMessage('Agregue al menos una pÃ¡gina antes de generar el PDF.');
       return;
     }
 
     const cleanName = sanitizePdfName(pdfName);
     if (!cleanName) {
       setPdfMessage(
-        'Escriba un nombre de archivo válido (sin caracteres como / \\ : * ? " < > |).',
+        'Escriba un nombre de archivo vÃ¡lido (sin caracteres como / \\ : * ? " < > |).',
       );
       return;
     }
@@ -943,12 +991,12 @@ export function ScannerPage() {
         setSaveMessage('Documento guardado en este dispositivo.');
       } catch {
         setSaveMessage(
-          'PDF generado. No se pudo guardar en este dispositivo; descárguelo o compártalo.',
+          'PDF generado. No se pudo guardar en este dispositivo; descÃ¡rguelo o compÃ¡rtalo.',
         );
       }
     } catch {
       setPdfMessage(
-        'No se pudo generar el PDF. Compruebe que las páginas siguen disponibles e inténtelo de nuevo.',
+        'No se pudo generar el PDF. Compruebe que las pÃ¡ginas siguen disponibles e intÃ©ntelo de nuevo.',
       );
     } finally {
       setPdfBusy(false);
@@ -1019,7 +1067,7 @@ export function ScannerPage() {
   }, [stopCamera]);
 
   const pageCountLabel = useMemo(
-    () => `${pages.length} ${pages.length === 1 ? 'página' : 'páginas'}`,
+    () => `${pages.length} ${pages.length === 1 ? 'pÃ¡gina' : 'pÃ¡ginas'}`,
     [pages.length],
   );
 
@@ -1041,14 +1089,14 @@ export function ScannerPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        description="Capture páginas con la cámara posterior, organícelas y genere un PDF para descargarlo o compartirlo."
+        description="Capture pÃ¡ginas con la cÃ¡mara posterior, organÃ­celas y genere un PDF para descargarlo o compartirlo."
         eyebrow="Escanear"
         title="Escanear documento"
       />
 
       <section className="scanner-panel" aria-labelledby="scanner-title">
         <h2 className="sr-only" id="scanner-title">
-          Cámara y captura
+          CÃ¡mara y captura
         </h2>
 
         <div className="scanner-toolbar">
@@ -1078,7 +1126,7 @@ export function ScannerPage() {
               onClick={() => handleModeChange('auto')}
               type="button"
             >
-              Automático
+              AutomÃ¡tico
             </button>
           </div>
 
@@ -1098,7 +1146,7 @@ export function ScannerPage() {
         {cvState === 'loading' ? (
           <div className="opencv-status" role="status">
             <progress max={100} value={cvProgress} />
-            <span>Cargando detección OpenCV.js: {cvProgress}%</span>
+            <span>Cargando detecciÃ³n OpenCV.js: {cvProgress}%</span>
           </div>
         ) : null}
 
@@ -1107,7 +1155,7 @@ export function ScannerPage() {
             <Icon name="info" size={20} />
             <div>
               <p>
-                La detección automática no está disponible. Puede capturar y
+                La detecciÃ³n automÃ¡tica no estÃ¡ disponible. Puede capturar y
                 ajustar las esquinas manualmente.
               </p>
               <button
@@ -1115,11 +1163,39 @@ export function ScannerPage() {
                 onClick={() => setCvState('idle')}
                 type="button"
               >
-                Reintentar detección
+                Reintentar detecciÃ³n
               </button>
             </div>
           </div>
         ) : null}
+
+        <div className="scan-orientation" role="group" aria-label="OrientaciÃ³n de la guÃ­a">
+          <span>OrientaciÃ³n:</span>
+          <button
+            aria-pressed={guideOrientation === 'vertical'}
+            className={`scan-orientation__button${
+              guideOrientation === 'vertical'
+                ? ' scan-orientation__button--active'
+                : ''
+            }`}
+            onClick={() => setGuideOrientation('vertical')}
+            type="button"
+          >
+            Vertical
+          </button>
+          <button
+            aria-pressed={guideOrientation === 'horizontal'}
+            className={`scan-orientation__button${
+              guideOrientation === 'horizontal'
+                ? ' scan-orientation__button--active'
+                : ''
+            }`}
+            onClick={() => setGuideOrientation('horizontal')}
+            type="button"
+          >
+            Horizontal
+          </button>
+        </div>
 
         <div
           className={`camera-stage${
@@ -1136,7 +1212,15 @@ export function ScannerPage() {
           />
 
           {cameraState === 'ready' ? (
-            <div aria-hidden="true" className="scan-guide" ref={guideRef}>
+            <div
+              aria-hidden="true"
+              className={`scan-guide scan-guide--${guideOrientation}${
+                liveDetection.status === 'stable'
+                  ? ' scan-guide--detected'
+                  : ''
+              }`}
+              ref={guideRef}
+            >
               <span className="scan-guide__corner scan-guide__corner--tl" />
               <span className="scan-guide__corner scan-guide__corner--tr" />
               <span className="scan-guide__corner scan-guide__corner--bl" />
@@ -1165,8 +1249,10 @@ export function ScannerPage() {
               role="status"
             >
               {liveDetection.status === 'stable'
-                ? 'Documento detectado'
-                : 'Ajuste el documento dentro de la guía'}
+                ? 'Documento listo para capturar'
+                : liveDetection.corners !== null
+                  ? 'Aleje ligeramente la cÃ¡mara'
+                  : 'Coloque la hoja completa dentro del marco'}
             </p>
           ) : null}
 
@@ -1203,14 +1289,14 @@ export function ScannerPage() {
           {cameraState === 'starting' ? (
             <div className="camera-overlay">
               <span className="camera-overlay__spinner" aria-hidden="true" />
-              <p>Iniciando cámara…</p>
+              <p>Iniciando cÃ¡maraâ€¦</p>
             </div>
           ) : null}
 
           {cameraState === 'error' ? (
             <div className="camera-overlay camera-overlay--error" role="alert">
               <Icon name="camera" size={30} />
-              <h2>No se pudo abrir la cámara</h2>
+              <h2>No se pudo abrir la cÃ¡mara</h2>
               <p>{cameraError}</p>
               <button
                 className="button button--light"
@@ -1232,6 +1318,24 @@ export function ScannerPage() {
           <div aria-hidden="true" className="camera-flash" />
         </div>
 
+        {new URLSearchParams(window.location.search).get('debugScanner') === '1' ? (
+          <div className="debug-panel" role="status">
+            <p>Modo: {mode}</p>
+            <p>Estado: {liveDetection.status}</p>
+            <p>Esquinas: {liveDetection.corners ? 4 : 0}</p>
+            <p>
+              Ãrea:{' '}
+              {Math.round(liveDetection.areaRatio * 100)}%
+            </p>
+            <p>Cuenta: {countdown ?? '-'}</p>
+            <p>
+              Bloqueo:{' '}
+              {autoNeedsMovement ? 'sí' : 'no'}
+            </p>
+            <p>CV: {cvState}</p>
+          </div>
+        ) : null}
+
         {mode === 'manual' ? (
           <div className="capture-controls">
             <button
@@ -1241,10 +1345,10 @@ export function ScannerPage() {
               type="button"
             >
               <Icon name="camera" size={22} />
-              {capturing ? 'Capturando…' : 'Capturar página'}
+              {capturing ? 'Capturandoâ€¦' : 'Capturar pÃ¡gina'}
             </button>
             <p className="capture-hint">
-              Alinee el documento dentro de la guía. Después podrá ajustar las
+              Alinee el documento dentro de la guÃ­a. DespuÃ©s podrÃ¡ ajustar las
               cuatro esquinas.
             </p>
           </div>
@@ -1254,8 +1358,17 @@ export function ScannerPage() {
               <span className="auto-status__dot" aria-hidden="true" />
               {autoHint}
             </p>
+            <button
+              className="button button--capture"
+              disabled={cameraState !== 'ready' || capturing || pendingCapture !== null}
+              onClick={() => void capturePage()}
+              type="button"
+            >
+              <Icon name="camera" size={22} />
+              Capturar ahora
+            </button>
             <p className="capture-hint">
-              Modo automático: la captura exige cuatro esquinas estables y corrige
+              Modo automÃ¡tico: la captura exige cuatro esquinas estables y corrige
               la perspectiva.
             </p>
           </div>
@@ -1266,7 +1379,7 @@ export function ScannerPage() {
             <Icon name="info" size={20} />
             <div>
               <p>
-                La próxima captura reemplazará la página {replaceIndex + 1}.
+                La prÃ³xima captura reemplazarÃ¡ la pÃ¡gina {replaceIndex + 1}.
               </p>
               <button
                 className="button button--secondary button--small"
@@ -1290,14 +1403,14 @@ export function ScannerPage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Bandeja</p>
-            <h2 id="pages-title">Páginas escaneadas</h2>
+            <h2 id="pages-title">PÃ¡ginas escaneadas</h2>
           </div>
           <span className="tag tag--muted">{pageCountLabel}</span>
         </div>
 
         {pages.length === 0 ? (
           <p className="scanner-empty">
-            Aún no hay páginas en esta sesión. Active la cámara y capture la
+            AÃºn no hay pÃ¡ginas en esta sesiÃ³n. Active la cÃ¡mara y capture la
             primera.
           </p>
         ) : (
@@ -1322,7 +1435,7 @@ export function ScannerPage() {
                   setReplaceIndex(index);
                   handleModeChange('manual');
                   setAutoHint(
-                    'La próxima captura reemplazará la página seleccionada.',
+                    'La prÃ³xima captura reemplazarÃ¡ la pÃ¡gina seleccionada.',
                   );
                   scannerRef.current?.scrollIntoView({
                     behavior: 'smooth',
@@ -1361,7 +1474,7 @@ export function ScannerPage() {
               value={pdfName}
             />
             <p className="field-hint">
-              Se guardará como archivo PDF en este dispositivo y en el nombre de
+              Se guardarÃ¡ como archivo PDF en este dispositivo y en el nombre de
               descarga.
             </p>
           </div>
@@ -1372,13 +1485,13 @@ export function ScannerPage() {
             onClick={() => void handleGeneratePdf()}
             type="button"
           >
-            {pdfBusy ? 'Generando PDF…' : 'Generar PDF'}
+            {pdfBusy ? 'Generando PDFâ€¦' : 'Generar PDF'}
           </button>
 
           {pdfBusy ? (
             <div className="pdf-progress">
               <progress
-                aria-label="Progreso de generación del PDF"
+                aria-label="Progreso de generaciÃ³n del PDF"
                 max={100}
                 value={pdfProgress}
               />
@@ -1389,7 +1502,7 @@ export function ScannerPage() {
           {pdfResult ? (
             <div className="pdf-result">
               <p>
-                <strong>Tamaño aproximado:</strong>{' '}
+                <strong>TamaÃ±o aproximado:</strong>{' '}
                 {formatBytes(pdfResult.size)}
               </p>
               {saveMessage ? <p role="status">{saveMessage}</p> : null}
@@ -1413,9 +1526,9 @@ export function ScannerPage() {
           ) : (
             <p className="field-hint">
               {pages.length > 0
-                ? `Tamaño aproximado del PDF: ${formatBytes(estimatedPdfSize)}. `
+                ? `TamaÃ±o aproximado del PDF: ${formatBytes(estimatedPdfSize)}. `
                 : ''}
-              Genere el PDF para ver el tamaño y habilitar la descarga o el uso
+              Genere el PDF para ver el tamaÃ±o y habilitar la descarga o el uso
               compartido.
             </p>
           )}
